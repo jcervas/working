@@ -111,19 +111,19 @@ The political consequences of shifting to a citizen-based population base for re
 
 The table below summarizes the most affected districts:
 
-| District         | Representative         | Party |
-|------------------|-----------------------|-------|
-| Texas 33         | Marc Veasey           | D     |
-| New York 6       | Grace Meng            | D     |
-| Florida 27       | María Elvira Salazar  | R     |
-| Texas 29         | Sylvia Garcia         | D     |
-| New Jersey 8     | Rob Menendez          | D     |
-|                  |                       |       |
-| New York 24      | Claudia Tenney        | R     |
-| New York 23      | Nick Langworthy       | R     |
-| Florida 12       | Gus Bilirakis         | R     |
-| Texas 12         | Craig Goldman         | R     |
-| Texas 21         | Chip Roy              | R     |
+| State            |District         | Representative        | Party |
+|------------------|-----------------|-----------------------|-------|
+| Texas            | 33              | Marc Veasey           | D     |
+| New York         | 6               | Grace Meng            | D     |
+| Florida          | 27              | María Elvira Salazar  | R     |
+| Texas            | 29              | Sylvia Garcia         | D     |
+| New Jersey       | 8               | Rob Menendez          | D     |
+|                  |                 |                       |       |
+| New York         | 24              | Claudia Tenney        | R     |
+| New York         | 23              | Nick Langworthy       | R     |
+| Florida          | 12              | Gus Bilirakis         | R     |
+| Texas            | 12              | Craig Goldman         | R     |
+| Texas            | 21              | Chip Roy              | R     |
 
 This pattern underscores how a citizen-only apportionment base could systematically benefit Republicans in the redistricting process, as map-drawers would have both the incentive and the means to consolidate GOP power in affected states.
 
