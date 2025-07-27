@@ -30,9 +30,24 @@ apportion_values <- function(values, target_sum, method = c("Hill-Huntington", "
 
   return(allocations)
 }
-
+source('https://raw.githubusercontent.com/jcervas/R-Functions/refs/heads/main/get_acs/get_acs.R')
 fips <- read.csv("https://raw.githubusercontent.com/jcervas/Data/refs/heads/master/fips.csv")
-a <- read.csv('/Users/cervas/Library/Mobile Documents/com~apple~CloudDocs/Downloads/The New Political Consequences to Remo/est-2030-pop-ACS21-ACS23-1-year.csv')
+a <- read.csv('/Users/cervas/Library/CloudStorage/GoogleDrive-jcervas@andrew.cmu.edu/My Drive/GitHub/working/citizen-apportionment/est-2030-pop-ACS21-ACS23-1-year.csv')
+
+
+acs_2023 <- get_acs(
+  table = "B05001", 
+  year = 2023, 
+  geography = "cd", 
+  var_types = "E",
+  acs_year = 1)
+
+
+acs_2023$B05001_006E # Not a citizen
+acs_2023$B05001_001E # Total population
+
+
+
 
 apportion_2030 <- data.frame(
      `name` = a[,"name"],
