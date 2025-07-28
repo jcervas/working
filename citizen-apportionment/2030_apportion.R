@@ -35,19 +35,45 @@ fips <- read.csv("https://raw.githubusercontent.com/jcervas/Data/refs/heads/mast
 a <- read.csv('/Users/cervas/Library/CloudStorage/GoogleDrive-jcervas@andrew.cmu.edu/My Drive/GitHub/working/citizen-apportionment/est-2030-pop-ACS21-ACS23-1-year.csv')
 
 
-acs_2023 <- get_acs(
+acs_2023_cd <- get_acs(
   table = "B05001", 
   year = 2023, 
   geography = "cd", 
   var_types = "E",
   acs_year = 1)
 
+b05001_cd <- cbind.data.frame(
+  NAME = acs_2023_cd$NAME,
+  GEOID = acs_2023_cd$GEOID,
+  STATE = sub(".*,\\s*", "", acs_2023_cd$NAME), # Extract state from NAME,
+  # Extract district number or "At Large" from NAME
+  District = ifelse(
+    grepl("At Large", acs_2023_cd$NAME, ignore.case = TRUE),
+    1,
+    ifelse(
+      grepl("District", acs_2023_cd$NAME, ignore.case = TRUE),
+      as.numeric(sub(".*District\\s(\\d+).*", "\\1", acs_2023_cd$NAME)),
+      NA
+    )
+  ),
+  CITIZEN23 = acs_2023_cd$B05001_001E - acs_2023_cd$B05001_006E,
+  NOT_CIT23 = acs_2023_cd$B05001_006E, # Not a citizen
+  TOTAL23 = acs_2023_cd$B05001_001E # Total population
+)
 
-acs_2023$B05001_006E # Not a citizen
-acs_2023$B05001_001E # Total population
+b05001_cd <- subset(b05001_cd, !(STATE %in% c("Puerto Rico", "District of Columbia")))
 
 
 
+acs_2023_st <- get_acs(
+  table = "B05001", 
+  year = 2023, 
+  geography = "state", 
+  var_types = "E",
+  acs_year = 1)
+
+
+###
 
 apportion_2030 <- data.frame(
      `name` = a[,"name"],
