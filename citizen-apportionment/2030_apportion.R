@@ -30,11 +30,11 @@ apportion_values <- function(values, target_sum, method = c("Hill-Huntington", "
 
   return(allocations)
 }
+
 source('https://raw.githubusercontent.com/jcervas/R-Functions/refs/heads/main/get_acs/get_acs.R')
 fips <- read.csv("https://raw.githubusercontent.com/jcervas/Data/refs/heads/master/fips.csv")
-a <- read.csv('/Users/cervas/Library/CloudStorage/GoogleDrive-jcervas@andrew.cmu.edu/My Drive/GitHub/working/citizen-apportionment/est-2030-pop-ACS21-ACS23-1-year.csv')
 
-
+# Get 2023 ACS data for congressional districts
 acs_2023_cd <- get_acs(
   table = "B05001", 
   year = 2023, 
@@ -63,8 +63,25 @@ b05001_cd <- cbind.data.frame(
 
 b05001_cd <- subset(b05001_cd, !(STATE %in% c("Puerto Rico", "District of Columbia")))
 
+# Get 2021 ACS data for states
+acs_2021_st <- get_acs(
+  table = "B05001", 
+  year = 2021, 
+  geography = "state", 
+  var_types = "E",
+  acs_year = 1)
 
+acs_2021_st <- subset(acs_2021_st, !(acs_2021_st$GEOID %in% c("11", "72")))
 
+acs_2021_st <- cbind.data.frame(
+  NAME = acs_2021_st$NAME,
+  GEOID = acs_2021_st$GEOID,
+  CITIZEN21 = acs_2021_st$B05001_001E - acs_2021_st$B05001_006E,
+  NOT_CIT21 = acs_2021_st$B05001_006E, # Not a citizen      
+  TOTAL21 = acs_2021_st$B05001_001E # Total population
+) 
+
+# Get 2023 ACS data for states
 acs_2023_st <- get_acs(
   table = "B05001", 
   year = 2023, 
@@ -72,6 +89,39 @@ acs_2023_st <- get_acs(
   var_types = "E",
   acs_year = 1)
 
+acs_2023_st <- subset(acs_2023_st, !(acs_2023_st$GEOID %in% c("11", "72")))
+
+acs_2023_st <- cbind.data.frame(
+  NAME = acs_2023_st$NAME,
+  GEOID = acs_2023_st$GEOID,
+  CITIZEN23 = acs_2023_st$B05001_001E - acs_2023_st$B05001_006E,
+  NOT_CIT23 = acs_2023_st$B05001_006E, # Not a citizen        
+  TOTAL23 = acs_2023_st$B05001_001E # Total population
+)
+
+# Combine state and congressional district data
+a <- merge(acs_2021_st, acs_2023_st, by = c("NAME","GEOID"), suffixes = c("21", "23"))
+
+# Project 2030 total population using compound annual growth rate from 2021 to 2023
+years_ahead <- 2030 - 2023
+growth_rate <- (a$TOTAL23 / a$TOTAL21)^(1 / (2023 - 2021)) - 1
+cit_growth_rate <- (a$CITIZEN23 / a$CITIZEN21)^(1 / (2023 - 2021)) - 1
+a$total30_est <- as.integer(a$TOTAL23 * (1 + growth_rate)^years_ahead)
+a$citizen30_est <- as.integer(a$CITIZEN23 * (1 + cit_growth_rate)^years_ahead)
+a$noncitizen30_est <- a$total30_est - a$citizen30_est
+a <- a[, c("NAME", "GEOID", "TOTAL21", "CITIZEN21", "NOT_CIT21", "TOTAL23", "CITIZEN23", "NOT_CIT23", "total30_est", "citizen30_est", "noncitizen30_est")]
+# Rename columns for clarity
+names(a) <- c("name", "geoid", "total21", "citizen21", "not_citizen21", "total23", "citizen23", "not_citizen23", "total30_est", "citizen30_est", "noncitizen30_est")
+
+# Use the 2020 Census data for apportionment
+all_states <- decennialAPI(state = "all", geo = "state", table = "P1", year = "2020", variables = c("P1_001N")
+
+     "P1_011N", "P1_012N", "P1_013N", "P1_014N", "P1_015N", "P1_016N", "P1_017N", "P1_018N", "P1_019N",
+                "P1_020N")
+)
+
+# Apportionment for 2030 based on estimated total population and citizen population
+apportion_values(a[,"total20"], target_sum = 435, initial_seats = 1)
 
 ###
 
