@@ -599,9 +599,9 @@ project_growth_ensemble_sequential <- function(values, years, target_year, confi
   
   # Project each year sequentially
   for (year in (last_year + 1):target_year) {
-    # Add slight drift/uncertainty each year (growth rate can change)
+    # Add increasing drift/uncertainty each year (growth rate can change)
     year_offset <- year - last_year
-    drift_factor <- 1 + (year_offset - 1) * 0.1  # Increasing uncertainty over time
+    drift_factor <- 1 + (year_offset - 1) * 0.25  # More aggressive increasing uncertainty over time
     
     # Calculate projections for this year
     year_projections <- list()
@@ -611,11 +611,11 @@ project_growth_ensemble_sequential <- function(values, years, target_year, confi
     year_projections$best <- as.integer(max(0, projected_value))
     
     # Confidence intervals with increasing uncertainty
-    adjusted_sd <- weighted_sd * drift_factor
+    adjusted_sd <- weighted_sd * drift_factor * 1.5  # Make bands significantly wider
     for (conf_level in confidence_levels) {
       z_score <- qnorm(conf_level)
       rate_quantile <- weighted_mean + z_score * adjusted_sd
-      rate_quantile <- pmax(pmin(rate_quantile, 0.03), -0.02)  # Demographic constraints
+      rate_quantile <- pmax(pmin(rate_quantile, 0.05), -0.03)  # Wider demographic constraints
       
       projection <- current_value * (1 + rate_quantile)
       year_projections[[paste0("p", round(conf_level * 100))]] <- as.integer(max(0, projection))
@@ -690,12 +690,12 @@ project_monte_carlo_sequential <- function(values, years, target_year, n_simulat
       
       # Add uncertainty that increases with time
       year_offset <- year - last_year
-      uncertainty_multiplier <- 1 + (year_offset - 1) * 0.2  # Increasing uncertainty
-      adjusted_sd <- sd_rate * uncertainty_multiplier
+      uncertainty_multiplier <- 1 + (year_offset - 1) * 0.3  # More aggressive increasing uncertainty
+      adjusted_sd <- sd_rate * uncertainty_multiplier * 1.8  # Much wider uncertainty bands
       
       # Sample growth rate with evolving uncertainty
       sampled_rate <- rnorm(1, mean_rate, adjusted_sd)
-      sampled_rate <- pmax(pmin(sampled_rate, 0.03), -0.02)  # Demographic constraints
+      sampled_rate <- pmax(pmin(sampled_rate, 0.05), -0.03)  # Wider demographic constraints
       
       # Project this year
       projected_value <- current_value * (1 + sampled_rate)
@@ -740,108 +740,7 @@ apply_projections_to_state <- function(total_values, citizen_values, years_obser
   
   results <- list()
   
-  # 2-point methods (using most recent two years)
-  recent_years <- tail(years_observed, 2)
-  recent_total <- tail(total_values, 2)
-  recent_citizen <- tail(citizen_values, 2)
-  
-  results$total_linear_2pt <- project_linear(recent_total[1], recent_total[2], 
-                                             recent_years[1], recent_years[2], target_year)
-  results$citizen_linear_2pt <- project_linear(recent_citizen[1], recent_citizen[2], 
-                                               recent_years[1], recent_years[2], target_year)
-  
-  results$total_exp_2pt <- project_exponential(recent_total[1], recent_total[2], 
-                                               recent_years[1], recent_years[2], target_year)
-  results$citizen_exp_2pt <- project_exponential(recent_citizen[1], recent_citizen[2], 
-                                                 recent_years[1], recent_years[2], target_year)
-  
-  results$total_aapc_2pt <- project_aapc(recent_total[1], recent_total[2], 
-                                         recent_years[1], recent_years[2], target_year)
-  results$citizen_aapc_2pt <- project_aapc(recent_citizen[1], recent_citizen[2], 
-                                           recent_years[1], recent_years[2], target_year)
-  
-  # Multi-point methods
-  tryCatch({
-    results$total_linear_reg <- project_linear_regression(total_values, years_observed, target_year)
-    results$citizen_linear_reg <- project_linear_regression(citizen_values, years_observed, target_year)
-  }, error = function(e) {
-    results$total_linear_reg <<- NA
-    results$citizen_linear_reg <<- NA
-  })
-  
-  tryCatch({
-    results$total_polynomial <- project_polynomial(total_values, years_observed, target_year, degree = 2)
-    results$citizen_polynomial <- project_polynomial(citizen_values, years_observed, target_year, degree = 2)
-  }, error = function(e) {
-    # Fall back to linear regression if polynomial fails
-    results$total_polynomial <<- project_linear_regression(total_values, years_observed, target_year)
-    results$citizen_polynomial <<- project_linear_regression(citizen_values, years_observed, target_year)
-  })
-  
-  tryCatch({
-    results$total_weighted <- project_weighted_trend(total_values, years_observed, target_year)
-    results$citizen_weighted <- project_weighted_trend(citizen_values, years_observed, target_year)
-  }, error = function(e) {
-    results$total_weighted <<- NA
-    results$citizen_weighted <<- NA
-  })
-  
-  tryCatch({
-    results$total_moving_avg <- project_moving_average(total_values, years_observed, target_year, window = 2)
-    results$citizen_moving_avg <- project_moving_average(citizen_values, years_observed, target_year, window = 2)
-  }, error = function(e) {
-    results$total_moving_avg <<- NA
-    results$citizen_moving_avg <<- NA
-  })
-  
-  # Add robust linear method
-  tryCatch({
-    results$total_robust_linear <- project_robust_linear(total_values, years_observed, target_year)
-    results$citizen_robust_linear <- project_robust_linear(citizen_values, years_observed, target_year)
-  }, error = function(e) {
-    results$total_robust_linear <<- NA
-    results$citizen_robust_linear <<- NA
-  })
-  
-  # Add recent trend method (last 3 years)
-  tryCatch({
-    results$total_recent_trend <- project_recent_trend(total_values, years_observed, target_year)
-    results$citizen_recent_trend <- project_recent_trend(citizen_values, years_observed, target_year)
-  }, error = function(e) {
-    results$total_recent_trend <<- NA
-    results$citizen_recent_trend <<- NA
-  })
-  
-  # Add sequential growth ensemble method (year-by-year forecasting)
-  tryCatch({
-    total_ensemble <- project_growth_ensemble_sequential(total_values, years_observed, target_year)
-    citizen_ensemble <- project_growth_ensemble_sequential(citizen_values, years_observed, target_year)
-    
-    results$total_ensemble_best <- total_ensemble$best_estimate
-    results$citizen_ensemble_best <- citizen_ensemble$best_estimate
-    
-    # Store confidence intervals
-    if (!is.null(total_ensemble$confidence_intervals)) {
-      results$total_ensemble_p10 <- total_ensemble$confidence_intervals$p10
-      results$total_ensemble_p50 <- total_ensemble$confidence_intervals$p50
-      results$total_ensemble_p90 <- total_ensemble$confidence_intervals$p90
-    }
-    if (!is.null(citizen_ensemble$confidence_intervals)) {
-      results$citizen_ensemble_p10 <- citizen_ensemble$confidence_intervals$p10
-      results$citizen_ensemble_p50 <- citizen_ensemble$confidence_intervals$p50
-      results$citizen_ensemble_p90 <- citizen_ensemble$confidence_intervals$p90
-    }
-    
-    # Store growth rate statistics
-    results$total_mean_growth_rate <- total_ensemble$weighted_mean_rate
-    results$citizen_mean_growth_rate <- citizen_ensemble$weighted_mean_rate
-    
-  }, error = function(e) {
-    results$total_ensemble_best <<- NA
-    results$citizen_ensemble_best <<- NA
-  })
-  
-  # Add sequential Monte Carlo method (year-by-year simulation)
+  # Monte Carlo simulation (MCMC) - sequential year-by-year forecasting
   tryCatch({
     total_mc <- project_monte_carlo_sequential(total_values, years_observed, target_year, n_simulations = 500)
     citizen_mc <- project_monte_carlo_sequential(citizen_values, years_observed, target_year, n_simulations = 500)
@@ -865,7 +764,12 @@ apply_projections_to_state <- function(total_values, citizen_values, years_obser
       results$citizen_mc_p90 <- citizen_mc$confidence_intervals$p90
     }
     
+    # Store yearly projections for Monte Carlo method
+    results$total_mc_yearly <- total_mc$yearly_projections
+    results$citizen_mc_yearly <- citizen_mc$yearly_projections
+    
   }, error = function(e) {
+    warning(paste("Monte Carlo projection failed for", state_name, ":", e$message))
     results$total_monte_carlo <<- NA
     results$citizen_monte_carlo <<- NA
   })
@@ -882,9 +786,7 @@ cat("=== APPLYING PROJECTION METHODS ===\n")
 # Configuration
 years_observed <- analysis_years
 target_year <- 2030
-projection_methods <- c("linear_2pt", "exp_2pt", "aapc_2pt", "linear_reg", 
-                        "polynomial", "weighted", "moving_avg", "recent_trend", 
-                        "robust_linear", "ensemble_best", "monte_carlo")
+projection_methods <- c("monte_carlo")
 
 # Initialize projection columns
 for (method in projection_methods) {
@@ -905,6 +807,10 @@ state_acs$total_mean_growth_rate <- NA
 state_acs$citizen_mean_growth_rate <- NA
 
 # Apply projections to each state
+# Initialize empty list columns for yearly projections
+state_acs$total_mc_yearly <- vector("list", nrow(state_acs))
+state_acs$citizen_mc_yearly <- vector("list", nrow(state_acs))
+
 cat("Calculating projections for", nrow(state_acs), "states...\n")
 
 for (i in 1:nrow(state_acs)) {
@@ -944,40 +850,11 @@ for (i in 1:nrow(state_acs)) {
                                             years_with_data, target_year, 
                                             state_acs$NAME[i])
   
-  # Store results
-  state_acs$total2030_linear_2pt[i] <- projections$total_linear_2pt
-  state_acs$citizen2030_linear_2pt[i] <- projections$citizen_linear_2pt
-  state_acs$total2030_exp_2pt[i] <- projections$total_exp_2pt
-  state_acs$citizen2030_exp_2pt[i] <- projections$citizen_exp_2pt
-  state_acs$total2030_aapc_2pt[i] <- projections$total_aapc_2pt
-  state_acs$citizen2030_aapc_2pt[i] <- projections$citizen_aapc_2pt
-  state_acs$total2030_linear_reg[i] <- projections$total_linear_reg
-  state_acs$citizen2030_linear_reg[i] <- projections$citizen_linear_reg
-  state_acs$total2030_polynomial[i] <- projections$total_polynomial
-  state_acs$citizen2030_polynomial[i] <- projections$citizen_polynomial
-  state_acs$total2030_weighted[i] <- projections$total_weighted
-  state_acs$citizen2030_weighted[i] <- projections$citizen_weighted
-  state_acs$total2030_moving_avg[i] <- projections$total_moving_avg
-  state_acs$citizen2030_moving_avg[i] <- projections$citizen_moving_avg
-  state_acs$total2030_recent_trend[i] <- projections$total_recent_trend
-  state_acs$citizen2030_recent_trend[i] <- projections$citizen_recent_trend
-  state_acs$total2030_robust_linear[i] <- projections$total_robust_linear
-  state_acs$citizen2030_robust_linear[i] <- projections$citizen_robust_linear
-  
-  # Store ensemble results
-  state_acs$total2030_ensemble_best[i] <- projections$total_ensemble_best
-  state_acs$citizen2030_ensemble_best[i] <- projections$citizen_ensemble_best
+  # Store Monte Carlo results only
   state_acs$total2030_monte_carlo[i] <- projections$total_monte_carlo
   state_acs$citizen2030_monte_carlo[i] <- projections$citizen_monte_carlo
   
-  # Store confidence intervals
-  state_acs$total2030_ensemble_p10[i] <- projections$total_ensemble_p10
-  state_acs$total2030_ensemble_p50[i] <- projections$total_ensemble_p50
-  state_acs$total2030_ensemble_p90[i] <- projections$total_ensemble_p90
-  state_acs$citizen2030_ensemble_p10[i] <- projections$citizen_ensemble_p10
-  state_acs$citizen2030_ensemble_p50[i] <- projections$citizen_ensemble_p50
-  state_acs$citizen2030_ensemble_p90[i] <- projections$citizen_ensemble_p90
-  
+  # Store Monte Carlo confidence intervals
   state_acs$total2030_mc_p10[i] <- projections$total_mc_p10
   state_acs$total2030_mc_p25[i] <- projections$total_mc_p25
   state_acs$total2030_mc_p50[i] <- projections$total_mc_p50
@@ -989,9 +866,9 @@ for (i in 1:nrow(state_acs)) {
   state_acs$citizen2030_mc_p75[i] <- projections$citizen_mc_p75
   state_acs$citizen2030_mc_p90[i] <- projections$citizen_mc_p90
   
-  # Store growth rate statistics
-  state_acs$total_mean_growth_rate[i] <- projections$total_mean_growth_rate
-  state_acs$citizen_mean_growth_rate[i] <- projections$citizen_mean_growth_rate
+  # Store yearly projections for visualization
+  state_acs$total_mc_yearly[[i]] <- projections$total_mc_yearly
+  state_acs$citizen_mc_yearly[[i]] <- projections$citizen_mc_yearly
 }
 
 # Calculate non-citizen projections for each method
@@ -1004,8 +881,9 @@ for (method in projection_methods) {
   state_acs[[noncitizen_col]] <- state_acs[[total_col]] - state_acs[[citizen_col]]
 }
 
-# Set default projections (using ensemble method as most robust)
-state_acs$total2030_proj <- state_acs$total2030_ensemble_best
+# Set default projections (using Monte Carlo method)
+state_acs$total2030_proj <- state_acs$total2030_monte_carlo
+state_acs$citizen2030_proj <- state_acs$citizen2030_monte_carlo
 state_acs$citizen2030_proj <- state_acs$citizen2030_ensemble_best
 state_acs$noncitizen2030_proj <- state_acs$noncitizen2030_ensemble_best
 
@@ -1327,15 +1205,24 @@ create_state_projection_plot <- function(state_name = "Florida") {
 }
 
 # Create the visualization
-create_state_projection_plot("Florida")
+create_state_projection_plot("New York")
+
+# ------------------------------------------------------------------------------
+# Helper Functions for Plot Formatting
+# ------------------------------------------------------------------------------
+
+#' Format population numbers for axis labels (e.g., 1500000 -> "1.5M")
+format_population <- function(x) {
+  ifelse(x >= 1e6, paste0(round(x/1e6, 1), "M"),
+         ifelse(x >= 1e3, paste0(round(x/1e3, 0), "K"),
+                as.character(round(x, 0))))
+}
 
 # ------------------------------------------------------------------------------
 # Hurricane-Style Ensemble Projection Visualization
 # ------------------------------------------------------------------------------
 
-create_ensemble_projection_plot <- function(state_name = "Pennsylvania", method = c("ensemble", "monte_carlo", "both")) {
-  method <- match.arg(method)
-  
+create_monte_carlo_projection_plot <- function(state_name = "Pennsylvania") {
   state_data <- state_acs[state_acs$NAME == state_name, ]
   if (nrow(state_data) == 0) {
     cat("State", state_name, "not found.\n")
@@ -1361,216 +1248,219 @@ create_ensemble_projection_plot <- function(state_name = "Pennsylvania", method 
     }
   }
   
-  # Set up plot with ensemble projections
+  # Get Monte Carlo yearly projections from stored data
+  total_mc_yearly <- if(!is.null(state_data$total_mc_yearly[[1]])) state_data$total_mc_yearly[[1]] else NULL
+  citizen_mc_yearly <- if(!is.null(state_data$citizen_mc_yearly[[1]])) state_data$citizen_mc_yearly[[1]] else NULL
+  
+  # Set up plot
   par(mfrow = c(2, 1), mar = c(4, 4, 3, 2))
   
   # === TOTAL POPULATION PLOT ===
   
-  # Define projection year and last data year
-  proj_year <- 2030
+  # Define projection years and last data year
+  proj_years <- (max(years_known) + 1):2030
   last_year <- max(years_known)
   last_year_suffix <- substr(last_year, 3, 4)
+  last_total <- state_data[[paste0("TOTAL", last_year_suffix)]]
   
-  # Calculate range for y-axis based on selected method
-  if (method == "ensemble") {
-    total_min <- min(c(total_known, state_data$total2030_ensemble_p10), na.rm = TRUE)
-    total_max <- max(c(total_known, state_data$total2030_ensemble_p90), na.rm = TRUE)
-    method_title <- "Ensemble Forecast"
-  } else if (method == "monte_carlo") {
-    total_min <- min(c(total_known, state_data$total2030_mc_p10), na.rm = TRUE)
-    total_max <- max(c(total_known, state_data$total2030_mc_p90), na.rm = TRUE)
-    method_title <- "Monte Carlo Forecast"
+  # Extract year-by-year data for Monte Carlo method
+  total_best_yearly <- c()
+  total_upper_90_yearly <- c()
+  total_lower_10_yearly <- c()
+  
+  if (!is.null(total_mc_yearly)) {
+    for (year in proj_years) {
+      year_data <- total_mc_yearly[[as.character(year)]]
+      if (!is.null(year_data)) {
+        total_best_yearly <- c(total_best_yearly, year_data$best_estimate)
+        total_upper_90_yearly <- c(total_upper_90_yearly, year_data$confidence_intervals$p90)
+        total_lower_10_yearly <- c(total_lower_10_yearly, year_data$confidence_intervals$p10)
+      }
+    }
+  }
+  
+  # Calculate plot range including all projection uncertainty
+  if (length(total_upper_90_yearly) > 0 && length(total_lower_10_yearly) > 0) {
+    total_min <- min(c(total_known, total_lower_10_yearly), na.rm = TRUE)
+    total_max <- max(c(total_known, total_upper_90_yearly), na.rm = TRUE)
   } else {
-    total_min <- min(c(total_known, state_data$total2030_ensemble_p10, state_data$total2030_mc_p10), na.rm = TRUE)
-    total_max <- max(c(total_known, state_data$total2030_ensemble_p90, state_data$total2030_mc_p90), na.rm = TRUE)
-    method_title <- "Ensemble + Monte Carlo Forecast"
+    total_min <- min(total_known, na.rm = TRUE)
+    total_max <- max(total_known, na.rm = TRUE)
   }
   
   plot(years_known, total_known, type = "n", 
-      xlim = range(c(years_known, proj_year), na.rm = TRUE), 
-      ylim = c(total_min * 0.98, total_max * 1.02),
-       ylab = "Total Population", xlab = "Year", 
-       main = paste(state_name, "Total Population:", method_title))
+       xlim = c(min(years_known), 2030), 
+       ylim = c(total_min * 0.97, total_max * 1.03),
+       ylab = "", xlab = "", axes = FALSE,
+       main = paste(state_name, "Total Population: Sequential Monte Carlo Forecast"),
+       cex.main = 0.9)
   
-  # Add uncertainty bands based on selected method
-  last_total <- state_data[[paste0("TOTAL", last_year_suffix)]]
+  # Add custom x-axis with one-year increments
+  x_ticks <- seq(min(years_known), 2030, by = 1)
+  axis(1, at = x_ticks, cex.axis = 0.7)
   
-  # Ensemble confidence bands
-  if ((method == "ensemble" || method == "both") && 
-      !is.na(state_data$total2030_ensemble_p10) && !is.na(state_data$total2030_ensemble_p90)) {
+  # Custom y-axis with formatted labels rotated for readability
+  y_ticks <- pretty(c(total_min * 0.97, total_max * 1.03), n = 6)
+  axis(2, at = y_ticks, labels = format_population(y_ticks), cex.axis = 0.7, las = 1)
+  
+  # Add axis labels with smaller fonts
+  mtext("Year", side = 1, line = 2.5, cex = 0.8)
+  mtext("Total Population", side = 2, line = 2.5, cex = 0.8)
+  
+  # Add box around plot
+  box()
+  
+  # Plot complete gradient with 10% increments (10%, 20%, 30%, ..., 100%)
+  if (length(total_best_yearly) > 0 && length(total_upper_90_yearly) > 0 && length(total_lower_10_yearly) > 0) {
+    # Create smooth uncertainty bands
+    all_years <- c(last_year, proj_years)
+    all_best <- c(last_total, total_best_yearly)
+    all_upper_90 <- c(last_total, total_upper_90_yearly)
+    all_lower_10 <- c(last_total, total_lower_10_yearly)
     
-    polygon(c(last_year, proj_year, proj_year, last_year), 
-             c(last_total, state_data$total2030_ensemble_p10, 
-               state_data$total2030_ensemble_p90, last_total),
-             col = rgb(0, 0, 1, 0.2), border = NA)
+    # Calculate range for creating gradient layers
+    range_90 <- all_upper_90 - all_lower_10
     
-    lines(c(last_year, proj_year), c(last_total, state_data$total2030_ensemble_p10), 
-          col = "blue", lty = 2, lwd = 1)
-    lines(c(last_year, proj_year), c(last_total, state_data$total2030_ensemble_p90), 
-          col = "blue", lty = 2, lwd = 1)
-  }
-  
-  # Monte Carlo confidence bands
-  if ((method == "monte_carlo" || method == "both") &&
-      !is.na(state_data$total2030_mc_p25) && !is.na(state_data$total2030_mc_p75)) {
-    polygon(c(last_year, proj_year, proj_year, last_year), 
-             c(last_total, state_data$total2030_mc_p25, 
-               state_data$total2030_mc_p75, last_total),
-             col = rgb(0, 1, 0, 0.3), border = NA)
+    # Create 10 gradient layers from 100% (outermost) to 10% (innermost)
+    for (i in 10:1) {
+      # Calculate bounds for this confidence level
+      confidence_fraction <- i / 10  # 0.1, 0.2, 0.3, ..., 1.0
+      upper_bound <- all_best + range_90 * confidence_fraction * 0.4
+      lower_bound <- all_best - range_90 * confidence_fraction * 0.4
+      
+      # Transparency: 10% most transparent, 100% least transparent  
+      alpha <- 0.05 + (i - 1) * 0.005  # 0.05 to 0.275
+      
+      polygon(c(all_years, rev(all_years)), 
+              c(lower_bound, rev(upper_bound)),
+              col = rgb(0, 0, 1, alpha), border = NA)
+    }
+    
+    # Plot best estimate line (most prominent)
+    lines(all_years, all_best, col = "blue", lwd = 3)
+    
+    # Add points for key years
+    points(2030, total_best_yearly[length(total_best_yearly)], col = "blue", pch = 16, cex = 1.5)
   }
   
   # Historical data
   points(years_known, total_known, col = "black", pch = 16, cex = 1.2)
   lines(years_known, total_known, col = "black", lwd = 2)
   
-  # Best estimates - conditional based on method
-  if ((method == "ensemble" || method == "both") && !is.na(state_data$total2030_ensemble_best)) {
-    points(proj_year, state_data$total2030_ensemble_best, col = "blue", pch = 16, cex = 1.5)
-    lines(c(last_year, proj_year), c(last_total, state_data$total2030_ensemble_best), 
-          col = "blue", lwd = 3)
-  }
-  
-  if ((method == "monte_carlo" || method == "both") && !is.na(state_data$total2030_monte_carlo)) {
-    points(proj_year, state_data$total2030_monte_carlo, col = "green", pch = 17, cex = 1.5)
-    lines(c(last_year, proj_year), c(last_total, state_data$total2030_monte_carlo), 
-          col = "green", lwd = 2, lty = 3)
-  }
-  
   # Vertical line at last year
   abline(v = last_year, col = "gray", lty = 2)
   
-  # Add text annotations
-  if (!is.na(state_data$total_mean_growth_rate)) {
-    text(2025, total_max * 0.95, 
-         paste0("Avg Growth Rate: ", round(state_data$total_mean_growth_rate * 100, 2), "%/year"),
-         cex = 0.8, col = "darkblue")
-  }
-  
-  # Dynamic legend based on method
-  if (method == "ensemble") {
-    legend("topleft",
-           legend = c("Historical", "Ensemble Best", "80% CI (Ensemble)"),
-           col = c("black", "blue", rgb(0,0,1,0.2)),
-           lwd = c(2, 3, 8), lty = c(1, 1, 1), cex = 0.7)
-  } else if (method == "monte_carlo") {
-    legend("topleft",
-           legend = c("Historical", "Monte Carlo", "50% CI (MC)"),
-           col = c("black", "green", rgb(0,1,0,0.3)),
-           lwd = c(2, 2, 8), lty = c(1, 3, 1), cex = 0.7)
-  } else {
-    legend("topleft",
-           legend = c("Historical", "Ensemble Best", "Monte Carlo", "80% CI (Ensemble)", "50% CI (MC)"),
-           col = c("black", "blue", "green", rgb(0,0,1,0.2), rgb(0,1,0,0.3)),
-           lwd = c(2, 3, 2, 8, 8), lty = c(1, 1, 3, 1, 1), cex = 0.7)
-  }
+  legend("topleft",
+         legend = c("ACS 1-year estimates", "Best Estimate", "Probability Gradient"),
+         col = c("black", "blue", rgb(0,0,1,0.15)),
+         lwd = c(2, 3, 8), lty = c(1, 1, 1), cex = 0.6)
   
   # === CITIZEN POPULATION PLOT ===
   
-  # Calculate range for y-axis based on selected method
-  if (method == "ensemble") {
-    citizen_min <- min(c(citizen_known, state_data$citizen2030_ensemble_p10), na.rm = TRUE)
-    citizen_max <- max(c(citizen_known, state_data$citizen2030_ensemble_p90), na.rm = TRUE)
-  } else if (method == "monte_carlo") {
-    citizen_min <- min(c(citizen_known, state_data$citizen2030_mc_p10), na.rm = TRUE)
-    citizen_max <- max(c(citizen_known, state_data$citizen2030_mc_p90), na.rm = TRUE)
+  last_citizen <- state_data[[paste0("CITIZEN", last_year_suffix)]]
+  
+  # Extract year-by-year data for citizens
+  citizen_best_yearly <- c()
+  citizen_upper_90_yearly <- c()
+  citizen_lower_10_yearly <- c()
+  
+  if (!is.null(citizen_mc_yearly)) {
+    for (year in proj_years) {
+      year_data <- citizen_mc_yearly[[as.character(year)]]
+      if (!is.null(year_data)) {
+        citizen_best_yearly <- c(citizen_best_yearly, year_data$best_estimate)
+        citizen_upper_90_yearly <- c(citizen_upper_90_yearly, year_data$confidence_intervals$p90)
+        citizen_lower_10_yearly <- c(citizen_lower_10_yearly, year_data$confidence_intervals$p10)
+      }
+    }
+  }
+  
+  # Calculate plot range including all projection uncertainty
+  if (length(citizen_upper_90_yearly) > 0 && length(citizen_lower_10_yearly) > 0) {
+    citizen_min <- min(c(citizen_known, citizen_lower_10_yearly), na.rm = TRUE)
+    citizen_max <- max(c(citizen_known, citizen_upper_90_yearly), na.rm = TRUE)
   } else {
-    citizen_min <- min(c(citizen_known, state_data$citizen2030_ensemble_p10, state_data$citizen2030_mc_p10), na.rm = TRUE)
-    citizen_max <- max(c(citizen_known, state_data$citizen2030_ensemble_p90, state_data$citizen2030_mc_p90), na.rm = TRUE)
+    citizen_min <- min(citizen_known, na.rm = TRUE)
+    citizen_max <- max(citizen_known, na.rm = TRUE)
   }
   
   plot(years_known, citizen_known, type = "n", 
-       xlim = range(c(years_known, proj_year), na.rm = TRUE), ylim = c(citizen_min * 0.98, citizen_max * 1.02),
-       ylab = "Citizen Population", xlab = "Year", 
-       main = paste(state_name, "Citizen Population:", method_title))
+       xlim = c(min(years_known), 2030), 
+       ylim = c(citizen_min * 0.97, citizen_max * 1.03),
+       ylab = "", xlab = "", axes = FALSE,
+       main = paste(state_name, "Citizen Population: Sequential Monte Carlo Forecast"),
+       cex.main = 0.9)
   
-  # Add uncertainty bands based on selected method
-  last_citizen <- state_data[[paste0("CITIZEN", last_year_suffix)]]
-  if ((method == "ensemble" || method == "both") &&
-      !is.na(state_data$citizen2030_ensemble_p10) && !is.na(state_data$citizen2030_ensemble_p90)) {
-    polygon(c(last_year, proj_year, proj_year, last_year), 
-             c(last_citizen, state_data$citizen2030_ensemble_p10, 
-               state_data$citizen2030_ensemble_p90, last_citizen),
-             col = rgb(1, 0, 0, 0.2), border = NA)
+  # Add custom x-axis with one-year increments
+  x_ticks <- seq(min(years_known), 2030, by = 1)
+  axis(1, at = x_ticks, cex.axis = 0.7)
+  
+  # Custom y-axis with formatted labels rotated for readability
+  y_ticks <- pretty(c(citizen_min * 0.97, citizen_max * 1.03), n = 6)
+  axis(2, at = y_ticks, labels = format_population(y_ticks), cex.axis = 0.7, las = 1)
+  
+  # Add axis labels with smaller fonts
+  mtext("Year", side = 1, line = 2.5, cex = 0.8)
+  mtext("Citizen Population", side = 2, line = 2.5, cex = 0.8)
+  
+  # Add box around plot
+  box()
+  
+  # Plot complete gradient with 10% increments (10%, 20%, 30%, ..., 100%)
+  if (length(citizen_best_yearly) > 0 && length(citizen_upper_90_yearly) > 0 && length(citizen_lower_10_yearly) > 0) {
+    # Create smooth uncertainty bands
+    all_years <- c(last_year, proj_years)
+    all_best <- c(last_citizen, citizen_best_yearly)
+    all_upper_90 <- c(last_citizen, citizen_upper_90_yearly)
+    all_lower_10 <- c(last_citizen, citizen_lower_10_yearly)
     
-    lines(c(last_year, proj_year), c(last_citizen, state_data$citizen2030_ensemble_p10), 
-          col = "red", lty = 2, lwd = 1)
-    lines(c(last_year, proj_year), c(last_citizen, state_data$citizen2030_ensemble_p90), 
-          col = "red", lty = 2, lwd = 1)
-  }
-  
-  # Monte Carlo confidence bands
-  if ((method == "monte_carlo" || method == "both") &&
-      !is.na(state_data$citizen2030_mc_p25) && !is.na(state_data$citizen2030_mc_p75)) {
-    polygon(c(last_year, proj_year, proj_year, last_year), 
-             c(last_citizen, state_data$citizen2030_mc_p25, 
-               state_data$citizen2030_mc_p75, last_citizen),
-             col = rgb(1, 0.5, 0, 0.3), border = NA)
+    # Calculate range for creating gradient layers
+    range_90 <- all_upper_90 - all_lower_10
+    
+    # Create 10 gradient layers from 100% (outermost) to 10% (innermost)
+    for (i in 10:1) {
+      # Calculate bounds for this confidence level
+      confidence_fraction <- i / 10  # 0.1, 0.2, 0.3, ..., 1.0
+      upper_bound <- all_best + range_90 * confidence_fraction * 0.4
+      lower_bound <- all_best - range_90 * confidence_fraction * 0.4
+      
+      # Transparency: 10% most transparent, 100% least transparent  
+      alpha <- 0.05 + (i - 1) * 0.005  # 0.05 to 0.275
+      
+      polygon(c(all_years, rev(all_years)), 
+              c(lower_bound, rev(upper_bound)),
+              col = rgb(1, 0, 0, alpha), border = NA)
+    }
+    
+    # Plot best estimate line (most prominent)
+    lines(all_years, all_best, col = "red", lwd = 3)
+    
+    # Add points for key years
+    points(2030, citizen_best_yearly[length(citizen_best_yearly)], col = "red", pch = 16, cex = 1.5)
   }
   
   # Historical data
   points(years_known, citizen_known, col = "black", pch = 16, cex = 1.2)
   lines(years_known, citizen_known, col = "black", lwd = 2)
   
-  # Best estimates - conditional based on method
-  if ((method == "ensemble" || method == "both") && !is.na(state_data$citizen2030_ensemble_best)) {
-    points(proj_year, state_data$citizen2030_ensemble_best, col = "red", pch = 16, cex = 1.5)
-    lines(c(last_year, proj_year), c(last_citizen, state_data$citizen2030_ensemble_best), 
-          col = "red", lwd = 3)
-  }
-  
-  if ((method == "monte_carlo" || method == "both") && !is.na(state_data$citizen2030_monte_carlo)) {
-    points(proj_year, state_data$citizen2030_monte_carlo, col = "orange", pch = 17, cex = 1.5)
-    lines(c(last_year, proj_year), c(last_citizen, state_data$citizen2030_monte_carlo), 
-          col = "orange", lwd = 2, lty = 3)
-  }
-  
   # Vertical line at last year
   abline(v = last_year, col = "gray", lty = 2)
   
-  # Add text annotations
-  if (!is.na(state_data$citizen_mean_growth_rate)) {
-    text(2025, citizen_max * 0.95, 
-         paste0("Avg Growth Rate: ", round(state_data$citizen_mean_growth_rate * 100, 2), "%/year"),
-         cex = 0.8, col = "darkred")
-  }
-  
-  # Dynamic legend based on method
-  if (method == "ensemble") {
-    legend("topleft",
-           legend = c("Historical", "Ensemble Best", "80% CI (Ensemble)"),
-           col = c("black", "red", rgb(1,0,0,0.2)),
-           lwd = c(2, 3, 8), lty = c(1, 1, 1), cex = 0.7)
-  } else if (method == "monte_carlo") {
-    legend("topleft",
-           legend = c("Historical", "Monte Carlo", "50% CI (MC)"),
-           col = c("black", "orange", rgb(1,0.5,0,0.3)),
-           lwd = c(2, 2, 8), lty = c(1, 3, 1), cex = 0.7)
-  } else {
-    legend("topleft",
-           legend = c("Historical", "Ensemble Best", "Monte Carlo", "80% CI (Ensemble)", "50% CI (MC)"),
-           col = c("black", "red", "orange", rgb(1,0,0,0.2), rgb(1,0.5,0,0.3)),
-           lwd = c(2, 3, 2, 8, 8), lty = c(1, 1, 3, 1, 1), cex = 0.7)
-  }
+  legend("topleft",
+         legend = c("ACS 1-year estimates", "Best Estimate", "Probability Gradient"),
+         col = c("black", "red", rgb(1,0,0,0.15)),
+         lwd = c(2, 3, 8), lty = c(1, 1, 1), cex = 0.6)
   
   par(mfrow = c(1, 1))  # Reset plot layout
 }
 
 # ------------------------------------------------------------------------------
-# Create projection visualizations with different methods
+# Create projection visualizations using Monte Carlo method
 # ------------------------------------------------------------------------------
 
-# Ensemble method only
-cat("Creating Ensemble-only forecast for New York...\n")
-create_ensemble_projection_plot("New York", method = "ensemble")
-
-# Monte Carlo method only  
-cat("Creating Monte Carlo-only forecast for Florida...\n")
-create_ensemble_projection_plot("Florida", method = "monte_carlo")
-
-# Both methods (default behavior)
-cat("Creating combined forecast for Texas...\n")
-create_ensemble_projection_plot("Texas", method = "both")
-
+# Monte Carlo method examples
+cat("Creating Monte Carlo forecast for New York...\n")
+create_monte_carlo_projection_plot("New York")
 
 
 # ==============================================================================
